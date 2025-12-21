@@ -6,6 +6,7 @@ import {
   TrendingUp, Shield, Scale, Target, BookOpen, Gem, AlertTriangle, CheckCircle2, Waves, PieChart as PieIcon, Info, Landmark, Wallet
 } from 'lucide-react';
 import CustomStrategy from '../components/CustomStrategy';
+import { ASSET_CLASSES } from '../data/historicalReturns';
 
 const STRATEGIES = [
   {
@@ -146,8 +147,9 @@ export default function FatFireModeling() {
         // 积累期：复利增长 + 年度投入
         currentWealth = (currentWealth * (1 + nominalGrowth)) + totalAnnualInvestment;
       } else {
-        // 退休期：复利增长 - 支出（支出按通胀逐年调整）
-        const nominalSpending = Number(annualSpending) * Math.pow(1 + inflationRate, yearIndex);
+        // 退休期：复利增长 - 支出（支出按通胀逐年调整，从退休年开始计算通胀）
+        const yearsInRetirement = age - Number(retirementAge);
+        const nominalSpending = Number(annualSpending) * Math.pow(1 + inflationRate, yearsInRetirement);
         currentWealth = (currentWealth * (1 + nominalGrowth)) - nominalSpending;
       }
 
@@ -180,6 +182,43 @@ export default function FatFireModeling() {
   // 处理自定义策略变化
   const handleCustomStrategyChange = (customStrategy: any) => {
     setSelectedStrategy(customStrategy);
+  };
+
+  // 将策略分配转换为投资组合格式
+  const convertStrategyAllocationToPortfolio = (allocation: any[]) => {
+    return allocation.map(item => {
+      // 从名称中提取符号（例如 "S&P 500 (VOO)" -> "VOO"）
+      const symbolMatch = item.name.match(/\(([^)]+)\)/);
+      const symbol = symbolMatch ? symbolMatch[1] : item.name.split(' ')[0];
+      
+      // 验证符号是否存在于资产类别中
+      const assetExists = ASSET_CLASSES.some(asset => asset.symbol === symbol);
+      if (assetExists) {
+        return {
+          symbol: symbol,
+          percentage: item.value
+        };
+      }
+      
+      // 如果符号不存在，尝试通过名称匹配
+      const assetByName = ASSET_CLASSES.find(asset => 
+        item.name.toLowerCase().includes(asset.name.toLowerCase()) ||
+        asset.name.toLowerCase().includes(item.name.toLowerCase())
+      );
+      
+      if (assetByName) {
+        return {
+          symbol: assetByName.symbol,
+          percentage: item.value
+        };
+      }
+      
+      // 默认使用现金作为后备
+      return {
+        symbol: 'CASH',
+        percentage: item.value
+      };
+    });
   };
 
   return (
@@ -240,7 +279,20 @@ export default function FatFireModeling() {
                   <InputField label="Mega Backdoor 额度" value={megaBackdoor} onChange={setMegaBackdoor} />
                 </div>
 
-                <InputField label="退休后年度支出" value={annualSpending} onChange={setAnnualSpending} />
+                <div className="relative">
+                  <InputField label="退休后年度支出 (首年金额)" value={annualSpending} onChange={setAnnualSpending} />
+                  <div className="absolute -top-2 -right-2 group">
+                    <div className="w-4 h-4 bg-indigo-100 rounded-full flex items-center justify-center cursor-help">
+                      <span className="text-xs text-indigo-600 font-bold">?</span>
+                    </div>
+                    <div className="absolute right-0 top-6 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                      <div className="font-semibold mb-1">支出计算说明</div>
+                      <div className="text-slate-300">
+                        此金额为退休<strong>第一年</strong>的支出。之后每年支出将按2.8%通胀率递增，例如第二年为{(annualSpending * 1.028).toLocaleString()}，第十年为{(annualSpending * Math.pow(1.028, 10)).toLocaleString()}。
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -478,6 +530,8 @@ export default function FatFireModeling() {
               <CustomStrategy 
                 onStrategyChange={handleCustomStrategyChange} 
                 onClose={() => setShowCustomStrategy(false)}
+                currentAllocation={selectedStrategy.id === 'custom' ? convertStrategyAllocationToPortfolio(selectedStrategy.allocation) : undefined}
+                currentStrategyName={selectedStrategy.id === 'custom' ? selectedStrategy.name : undefined}
               />
             )}
 

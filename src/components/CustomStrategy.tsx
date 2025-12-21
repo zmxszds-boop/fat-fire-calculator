@@ -27,17 +27,23 @@ interface CustomStrategyProps {
     allocations: PortfolioAllocation[];
   }) => void;
   onClose?: () => void;
+  currentAllocation?: PortfolioAllocation[];
+  currentStrategyName?: string;
 }
 
-export default function CustomStrategy({ onStrategyChange, onStrategySelect, onClose }: CustomStrategyProps) {
-  const [allocations, setAllocations] = useState<PortfolioAllocation[]>([
-    { symbol: 'VOO', percentage: 60 },
-    { symbol: 'BND', percentage: 30 },
-    { symbol: 'CASH', percentage: 10 }
-  ]);
+export default function CustomStrategy({ onStrategyChange, onStrategySelect, onClose, currentAllocation, currentStrategyName }: CustomStrategyProps) {
+  const defaultAllocations = currentAllocation && currentAllocation.length > 0 
+    ? currentAllocation 
+    : [
+        { symbol: 'VOO', percentage: 60 },
+        { symbol: 'BND', percentage: 30 },
+        { symbol: 'CASH', percentage: 10 }
+      ];
+  
+  const [allocations, setAllocations] = useState<PortfolioAllocation[]>(defaultAllocations);
   
   const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics | null>(null);
-  const [strategyName, setStrategyName] = useState('我的自定义策略');
+  const [strategyName, setStrategyName] = useState(currentStrategyName || '我的自定义策略');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
 
