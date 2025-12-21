@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Minus, TrendingUp, BarChart3, AlertTriangle, Target, Check, HelpCircle } from 'lucide-react';
+import { Plus, Minus, TrendingUp, BarChart3, AlertTriangle, Target, Check, HelpCircle, Calendar } from 'lucide-react';
 import { 
   ASSET_CLASSES, 
   PortfolioAllocation, 
-  PortfolioMetrics, 
+  PortfolioMetrics,
   calculatePortfolioMetrics,
   getAssetBySymbol,
-  AssetClass 
+  getAssetHistoricalReturns,
+  AssetClass,
+  TimePeriod
 } from '../data/historicalReturns';
 
 interface CustomStrategyProps {
@@ -41,16 +43,30 @@ export default function CustomStrategy({ onStrategyChange, onStrategySelect, onC
       ];
   
   const [allocations, setAllocations] = useState<PortfolioAllocation[]>(defaultAllocations);
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('10Y');
   
   const [portfolioMetrics, setPortfolioMetrics] = useState<PortfolioMetrics | null>(null);
   const [strategyName, setStrategyName] = useState(currentStrategyName || '我的自定义策略');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
 
-  // Calculate portfolio metrics when allocations change
+  // Helper function to get average return for selected time period
+  const getAssetAverageReturn = (asset: AssetClass): number => {
+    if (!asset) return 0;
+    const historicalReturns = getAssetHistoricalReturns(asset.symbol, timePeriod) || asset.historicalReturns;
+    if (!historicalReturns || historicalReturns.length === 0) return 0;
+    return historicalReturns.reduce((sum, ret) => sum + ret, 0) / historicalReturns.length;
+  };
+
+  // Calculate portfolio metrics when allocations or time period change
   useEffect(() => {
     try {
-      const metrics = calculatePortfolioMetrics(allocations);
+      if (!allocations || allocations.length === 0) {
+        setPortfolioMetrics(null);
+        return;
+      }
+      
+      const metrics = calculatePortfolioMetrics(allocations, timePeriod);
       setPortfolioMetrics(metrics);
       
       // Notify parent component of strategy change
@@ -60,9 +76,22 @@ export default function CustomStrategy({ onStrategyChange, onStrategySelect, onC
       console.error('Error calculating portfolio metrics:', error);
       setPortfolioMetrics(null);
     }
-  }, [allocations, strategyName, onStrategyChange]);
+  }, [allocations, strategyName, timePeriod, onStrategyChange]);
 
   const createStrategyFromAllocations = (allocations: PortfolioAllocation[], metrics: PortfolioMetrics) => {
+    if (!allocations || !metrics) {
+      return {
+        id: 'custom',
+        name: strategyName,
+        growth: 0,
+        color: '#6366f1',
+        allocation: [],
+        description: '自定义投资组合配置',
+        pros: '完全个性化配置',
+        cons: '需要投资知识'
+      };
+    }
+    
     const allocationDetails = allocations.map(alloc => {
       const asset = getAssetBySymbol(alloc.symbol);
       return {
@@ -215,11 +244,48 @@ export default function CustomStrategy({ onStrategyChange, onStrategySelect, onC
         </div>
       </div>
 
+      {/* Time Period Selector */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Calendar className="w-4 h-4 text-slate-500" />
+          <label className="text-sm font-medium text-slate-700">回测时间周期</label>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { value: '10Y', label: '10年', desc: '2014-2024' },
+            { value: '20Y', label: '20年', desc: '2005-2024' },
+            { value: '30Y', label: '30年', desc: '1995-2024' }
+          ].map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setTimePeriod(option.value as TimePeriod)}
+              className={`p-2 rounded-lg border text-center transition-all ${
+                timePeriod === option.value
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'
+              }`}
+            >
+              <div className="text-sm font-medium">{option.label}</div>
+              <div className="text-xs text-slate-500">{option.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Compact Asset Allocation Sliders */}
       <div className="space-y-3 mb-4">
         {allocations.map((allocation) => {
           const asset = getAssetBySymbol(allocation.symbol);
-          if (!asset) return null;
+          if (!asset) {
+            console.warn(`Asset not found for symbol: ${allocation.symbol}`);
+            return (
+              <div key={allocation.symbol} className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div className="text-sm text-slate-600">
+                  资产 {allocation.symbol} 未找到，请检查配置
+                </div>
+              </div>
+            );
+          }
 
           return (
             <div key={allocation.symbol} className="bg-slate-50 p-3 rounded-xl border border-slate-200">
@@ -261,7 +327,7 @@ export default function CustomStrategy({ onStrategyChange, onStrategySelect, onC
               </div>
               <div className="flex justify-between text-xs text-slate-500">
                 <span>0%</span>
-                <span className="text-slate-600">历史: {asset.avgReturn.toFixed(1)}%</span>
+                <span className="text-slate-600">历史: {getAssetAverageReturn(asset).toFixed(1)}%</span>
                 <span>100%</span>
               </div>
             </div>
@@ -281,6 +347,48 @@ export default function CustomStrategy({ onStrategyChange, onStrategySelect, onC
               {showAdvanced ? '隐藏详情' : '显示详情'}
             </button>
           </div>
+          
+          {/* Detailed information - moved closer to the button */}
+          {showAdvanced && (
+            <div className="p-3 bg-slate-100 rounded-lg mb-3">
+              <h5 className="text-xs font-medium text-slate-700 mb-2">详细配置分析 ({timePeriod === '10Y' ? '10年' : timePeriod === '20Y' ? '20年' : '30年'}数据)</h5>
+              <div className="space-y-1">
+                {allocations.map(allocation => {
+                  const asset = getAssetBySymbol(allocation.symbol);
+                  if (!asset) {
+                    console.warn(`Asset not found for symbol: ${allocation.symbol}`);
+                    return (
+                      <div key={allocation.symbol} className="flex justify-between items-center text-xs">
+                        <span className="text-slate-600">{allocation.symbol}</span>
+                        <span className="text-red-600 font-medium">数据缺失</span>
+                      </div>
+                    );
+                  }
+                  
+                  const avgReturn = getAssetAverageReturn(asset);
+                  const contribution = (allocation.percentage / 100) * avgReturn;
+                  
+                  return (
+                    <div key={allocation.symbol} className="flex justify-between items-center text-xs">
+                      <span className="text-slate-600">{asset.symbol}</span>
+                      <span className="text-slate-800 font-medium">
+                        {allocation.percentage}% × {avgReturn.toFixed(1)}% = {contribution.toFixed(1)}%
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="border-t border-slate-300 pt-1 mt-1">
+                  <div className="flex justify-between items-center text-xs font-bold">
+                    <span className="text-slate-700">总预期收益</span>
+                    <span className="text-slate-900">
+                      {portfolioMetrics.expectedReturn.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div className="relative">
             <select
               onChange={(e) => {
@@ -294,7 +402,7 @@ export default function CustomStrategy({ onStrategyChange, onStrategySelect, onC
               <option value="" className="text-slate-500">选择要添加的资产类别...</option>
               {availableAssets.map(asset => (
                 <option key={asset.symbol} value={asset.symbol} className="py-2">
-                  {asset.name} ({asset.category}) - 历史收益: {asset.avgReturn.toFixed(1)}%
+                  {asset.name} ({asset.category}) - 历史收益: {getAssetAverageReturn(asset).toFixed(1)}%
                 </option>
               ))}
             </select>
@@ -467,37 +575,6 @@ export default function CustomStrategy({ onStrategyChange, onStrategySelect, onC
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {showAdvanced && (
-            <div className="p-3 bg-slate-100 rounded-lg mb-3">
-              <h5 className="text-xs font-medium text-slate-700 mb-2">详细配置分析</h5>
-              <div className="space-y-1">
-                {allocations.map(allocation => {
-                  const asset = getAssetBySymbol(allocation.symbol);
-                  if (!asset) return null;
-                  
-                  const contribution = (allocation.percentage / 100) * asset.avgReturn;
-                  
-                  return (
-                    <div key={allocation.symbol} className="flex justify-between items-center text-xs">
-                      <span className="text-slate-600">{asset.symbol}</span>
-                      <span className="text-slate-800 font-medium">
-                        {allocation.percentage}% × {asset.avgReturn.toFixed(1)}% = {contribution.toFixed(1)}%
-                      </span>
-                    </div>
-                  );
-                })}
-                <div className="border-t border-slate-300 pt-1 mt-1">
-                  <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="text-slate-700">总预期收益</span>
-                    <span className="text-slate-900">
-                      {portfolioMetrics.expectedReturn.toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
